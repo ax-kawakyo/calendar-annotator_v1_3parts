@@ -1,11 +1,13 @@
+
+'use strict';
+
 // --- アプリケーションの状態 ---
 let currentDate = new Date();
 // ラベルデータ構造: { id, date, text, top, left, style: { color, backgroundColor, fontSize, fontWeight, fontStyle } }
 let labels = []; 
-// テンプレートデータ構造: { name, labels: [{ text, top, left, style }] }
+// テンプレートデータ構造: { id, text, style: { ... } }
 let templates = [];
 let currentId = '';
-let selectedDateForTemplate = null; // 'YYYY-MM-DD'
 let activeLabelInfo = null; // { type, id?, date?, text?, top?, left?, style? }
 let clipboard = null; // { text, style }
 let dragInfo = null; // { id, element, offsetX, offsetY, hasMoved, startX, startY }
@@ -16,50 +18,43 @@ let defaultStyle = {
     fontWeight: 'normal',
     fontStyle: 'normal',
 };
-const LOCAL_STORAGE_KEY_LABELS = 'calendar-annotator-labels';
-const LOCAL_STORAGE_KEY_TEMPLATES = 'calendar-annotator-templates';
+let isDatePickerVisible = false;
+let datePickerYear = new Date().getFullYear();
+let isTemplatePopoverVisible = false;
+let selectedTemplateId = null;
+let isWheeling = false; // For wheel throttling
+
+const LOCAL_STORAGE_KEY = 'calendar-annotator-data';
 
 // --- DOM要素 ---
 const root = document.getElementById('root');
 const popover = document.getElementById('popover');
+const templatePopoverContainer = document.getElementById('template-popover-container');
 
 // --- Data Persistence ---
-const saveLabelsToLocalStorage = () => {
+const saveDataToLocalStorage = () => {
     try {
-        localStorage.setItem(LOCAL_STORAGE_KEY_LABELS, JSON.stringify({ labels, currentId }));
-    } catch (e) { console.error("Failed to save labels:", e); }
-};
-
-const loadLabelsFromLocalStorage = () => {
-    try {
-        const savedData = localStorage.getItem(LOCAL_STORAGE_KEY_LABELS);
-        if (savedData) {
-            const parsedData = JSON.parse(savedData);
-            labels = parsedData.labels || [];
-            currentId = parsedData.currentId || '';
-        }
+        const data = { labels, templates, currentId };
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
     } catch (e) {
-        console.error("Failed to load labels:", e);
-        labels = [];
-        currentId = '';
+        console.error("Failed to save data to localStorage:", e);
     }
 };
 
-const saveTemplatesToLocalStorage = () => {
+const loadDataFromLocalStorage = () => {
     try {
-        localStorage.setItem(LOCAL_STORAGE_KEY_TEMPLATES, JSON.stringify(templates));
-    } catch (e) { console.error("Failed to save templates:", e); }
-};
-
-const loadTemplatesFromLocalStorage = () => {
-    try {
-        const savedData = localStorage.getItem(LOCAL_STORAGE_KEY_TEMPLATES);
+        const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
         if (savedData) {
-            templates = JSON.parse(savedData) || [];
+            const parsedData = JSON.parse(savedData);
+            labels = parsedData.labels || [];
+            templates = parsedData.templates || [];
+            currentId = parsedData.currentId || '';
         }
     } catch (e) {
-        console.error("Failed to load templates:", e);
+        console.error("Failed to load or parse data from localStorage:", e);
+        labels = [];
         templates = [];
+        currentId = '';
     }
 };
 
@@ -83,98 +78,41 @@ const getLabelStyle = (styleObj) => {
 }
 
 // --- Popover Functions ---
-const showPopover = (targetElement, type) => {
+const showPopover = (targetElement) => {
+    if (!activeLabelInfo) return;
+
     const rect = targetElement.getBoundingClientRect();
-    let popoverHtml = '';
-
-    if (type === 'cell') {
-        const templateOptionsHtml = templates.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
-        popoverHtml = `
-            <div class="popover-content">
-                <div class="popover-template-section">
-                    <label class="popover-section-label" for="popover-template-select">テンプレートを適用</label>
-                    <div class="popover-actions">
-                       <select id="popover-template-select" style="flex-grow: 2;">
-                            <option value="">選択...</option>
-                            ${templateOptionsHtml}
-                       </select>
-                       <button class="popover-btn" data-action="apply-template">適用</button>
-                       <button class="popover-btn" data-action="delete-template">削除</button>
-                    </div>
-                </div>
-                <hr>
-                <div class="popover-template-section">
-                    <label class="popover-section-label" for="new-template-name-input">この日をテンプレートとして保存</label>
-                    <div class="popover-actions">
-                         <input type="text" id="new-template-name-input" placeholder="新しいテンプレート名" style="flex-grow: 2;">
-                         <button class="popover-btn" data-action="save-as-template">保存</button>
-                    </div>
-                </div>
-            </div>`;
-        popover.style.left = `${rect.left}px`;
-        popover.style.top = `${rect.bottom + 4}px`;
-    } else if (type === 'yearMonth') {
-        const year = currentDate.getFullYear();
-        const month = currentDate.getMonth();
-        let monthsHtml = '';
-        for (let i = 0; i < 12; i++) {
-            const isCurrent = i === month;
-            monthsHtml += `<button class="month-grid-item ${isCurrent ? 'current' : ''}" data-month="${i}">${i + 1}月</button>`;
-        }
-        popoverHtml = `
-            <div class="year-month-popover-content">
-                <div class="year-selector-header">
-                    <button data-action="prev-year">‹</button>
-                    <input type="number" id="year-input" value="${year}">
-                    <button data-action="next-year">›</button>
-                </div>
-                <div class="month-grid">${monthsHtml}</div>
-                <div class="popover-footer">
-                    <button data-action="go-today">今日</button>
-                </div>
-            </div>`;
-         popover.style.left = `${rect.left}px`;
-         popover.style.top = `${rect.bottom + 8}px`;
-
-    } else { // 'newLabel' or 'existingLabel'
-        let buttonsHtml = '';
-        if (type === 'newLabel') {
-            let pasteButtonHtml = clipboard ? `<button class="popover-btn" data-action="paste">貼付</button>` : '';
-            buttonsHtml = `${pasteButtonHtml}<button class="popover-btn" data-action="save">保存</button><button class="popover-btn" data-action="cancel">取消</button>`;
-        } else { // 'existingLabel'
-            buttonsHtml = `<button class="popover-btn" data-action="update">更新</button><button class="popover-btn" data-action="copy">コピー</button><button class="popover-btn" data-action="delete">削除</button>`;
-        }
-        popoverHtml = `<div class="popover-actions">${buttonsHtml}</div>`;
-        // ポップオーバーをラベルの右側に表示
-        popover.style.left = `${rect.right + 8}px`;
-        popover.style.top = `${rect.top}px`;
-        popover.style.minWidth = 'auto'; // ラベル用はコンパクトに
-    }
+    popover.style.top = `${rect.top}px`;
+    popover.style.left = `${rect.right + 8}px`; // ラベルの右横に表示
     
-    popover.innerHTML = popoverHtml;
-    popover.style.display = 'block';
-
-    if (type === 'yearMonth') {
-         const yearInput = document.getElementById('year-input');
-         yearInput.addEventListener('change', (e) => {
-            const newYear = parseInt(e.target.value, 10);
-            if (!isNaN(newYear)) {
-                currentDate.setFullYear(newYear);
-                // ポップオーバーを再描画して月グリッドを更新
-                showPopover(targetElement, 'yearMonth');
-            }
-         });
+    let buttonsHtml = '';
+    if (activeLabelInfo.type === 'new') {
+        const pasteButtonDisabled = !clipboard ? 'disabled' : '';
+        buttonsHtml = `
+            <button class="popover-btn" data-action="save">決定</button>
+            <button class="popover-btn" data-action="paste" ${pasteButtonDisabled}>貼付</button>
+            <button class="popover-btn" data-action="recall">呼出</button>
+            <button class="popover-btn" data-action="cancel">取消</button>
+        `;
+    } else { // 'existing'
+        buttonsHtml = `
+            <button class="popover-btn" data-action="update">決定</button>
+            <button class="popover-btn" data-action="duplicate">複写</button>
+            <button class="popover-btn" data-action="recall">呼出</button>
+            <button class="popover-btn" data-action="save-template">テンプレ保存</button>
+            <button class="popover-btn" data-action="delete">削除</button>
+        `;
     }
+    popover.innerHTML = buttonsHtml;
+    popover.style.display = 'flex';
 };
 
 const hidePopover = () => {
-    if(activeLabelInfo || selectedDateForTemplate) {
+    if(activeLabelInfo) {
         activeLabelInfo = null;
-        selectedDateForTemplate = null;
         render();
     }
     popover.style.display = 'none';
-    popover.style.minWidth = '280px'; // デフォルトに戻す
 };
 
 // --- Decoration Bar Functions ---
@@ -228,134 +166,122 @@ const handleDecorationChange = (e) => {
 };
 
 // --- イベントハンドラ ---
+const toggleDatePicker = () => {
+    isDatePickerVisible = !isDatePickerVisible;
+    if (isDatePickerVisible) {
+        datePickerYear = currentDate.getFullYear();
+    }
+    render();
+};
+
+const handleDatePickerClick = (e) => {
+    const target = e.target;
+    const monthBtn = target.closest('.month-btn');
+    
+    if (target.closest('#prev-year-btn')) {
+        datePickerYear--;
+        render();
+    } else if (target.closest('#next-year-btn')) {
+        datePickerYear++;
+        render();
+    } else if (monthBtn) {
+        const month = monthBtn.dataset.month;
+        currentDate = new Date(datePickerYear, parseInt(month, 10), 1);
+        isDatePickerVisible = false;
+        render();
+    } else if (target.closest('#date-picker-today-btn')) {
+        currentDate = new Date();
+        isDatePickerVisible = false;
+        render();
+    }
+};
+
+const handleYearInputChange = (e) => {
+    const year = parseInt(e.target.value, 10);
+    if (!isNaN(year) && String(year).length >= 4) {
+         datePickerYear = year;
+         render();
+    }
+};
+
 const handleCalendarClick = (e) => {
     if (dragInfo && dragInfo.hasMoved) return;
 
     const clickedLabelEl = e.target.closest('.label');
     const clickedCellEl = e.target.closest('.date-cell');
 
-    if (e.target.closest('#popover') || e.target.closest('.decoration-bar')) {
+    if (e.target.closest('#popover') || e.target.closest('.decoration-bar') || e.target.closest('.date-picker-container') || e.target.closest('.template-popover-backdrop')) {
+        return;
+    }
+    
+    if (clickedCellEl && clickedCellEl.classList.contains('other-month')) {
+        const dateStr = clickedCellEl.dataset.date;
+        const [year, month, day] = dateStr.split('-').map(Number);
+        currentDate = new Date(year, month - 1, day);
+        if (activeLabelInfo) hidePopover();
+        render();
         return;
     }
 
-    // ポップオーバーの外側をクリックした場合は閉じる
-    const isPopoverVisible = popover.style.display !== 'none';
-    if(isPopoverVisible && !clickedLabelEl && !clickedCellEl) {
+    if (clickedLabelEl || clickedCellEl) {
+        e.stopPropagation();
+    }
+
+    const wasEditing = !!activeLabelInfo;
+    if (wasEditing && activeLabelInfo.id !== Number(clickedLabelEl?.dataset.id)) {
         hidePopover();
-        return;
     }
 
     if (clickedLabelEl) {
-        e.stopPropagation();
-        if (selectedDateForTemplate) {
-            selectedDateForTemplate = null;
-            render(); // セルの選択状態を解除
-        }
         const labelId = Number(clickedLabelEl.dataset.id);
-        if (activeLabelInfo?.id === labelId) return; // 既に編集中なら何もしない
+        if (activeLabelInfo?.id === labelId) return;
         
-        // 他のラベルを編集中だったら閉じる
-        if (activeLabelInfo) hidePopover();
-
         const labelData = labels.find(l => l.id === labelId);
         activeLabelInfo = { type: 'existing', id: labelId, style: { ...labelData.style } };
         render(); 
         
-        setTimeout(() => { // DOMの更新を待つ
+        setTimeout(() => {
             const activeLabelEl = document.querySelector(`.label[data-id="${labelId}"]`);
             if (activeLabelEl) {
                 activeLabelEl.focus();
-                showPopover(activeLabelEl, 'existingLabel');
+                showPopover(activeLabelEl);
             }
         }, 0);
 
     } else if (clickedCellEl) {
-        if (clickedCellEl.classList.contains('other-month')) {
-            // 他の月の日付がクリックされた場合：その月に移動
-            const dateStr = clickedCellEl.dataset.date;
-            const [year, month, day] = dateStr.split('-').map(Number);
-            currentDate = new Date(year, month - 1, day);
-            hidePopover(); // 開いているポップオーバーを閉じる
-            render();
-        } else {
-            // 現在の月の日付がクリックされた場合：既存のロジック
-            e.stopPropagation();
-            const dateStr = clickedCellEl.dataset.date;
-            // 既に選択中のセルを再度クリックした場合は何もしない（ポップオーバーが開いているはず）
-            if (selectedDateForTemplate === dateStr) return;
-            
-            // 他の操作中ならリセット
-            if (activeLabelInfo) hidePopover();
-            
-            selectedDateForTemplate = dateStr;
-            render();
-            showPopover(clickedCellEl, 'cell');
-        }
+        if (activeLabelInfo?.type === 'new') return;
+        
+        const dateStr = clickedCellEl.dataset.date;
+        const labelsOnDate = labels.filter(l => l.date === dateStr).length;
+        activeLabelInfo = {
+            type: 'new',
+            date: dateStr,
+            text: '新規ラベル',
+            top: 5 + labelsOnDate * 28,
+            left: 5,
+            style: { ...defaultStyle }
+        };
+        render();
+
+        setTimeout(() => {
+            const newLabelEl = document.getElementById('temp-new-label');
+            if (newLabelEl) {
+                newLabelEl.focus();
+                document.execCommand('selectAll', false, null);
+                showPopover(newLabelEl);
+            }
+        }, 0);
     }
-    updateDecorationBar();
-};
-
-const handleCalendarDblClick = (e) => {
-    const clickedCellEl = e.target.closest('.date-cell:not(.other-month)');
-    if (!clickedCellEl) return;
-    
-    hidePopover();
-
-    const dateStr = clickedCellEl.dataset.date;
-    const labelsOnDate = labels.filter(l => l.date === dateStr).length;
-    activeLabelInfo = {
-        type: 'new',
-        date: dateStr,
-        text: '新規ラベル',
-        top: 5 + labelsOnDate * 28,
-        left: 5,
-        style: { ...defaultStyle }
-    };
-    render();
-
-    setTimeout(() => {
-        const newLabelEl = document.getElementById('temp-new-label');
-        if (newLabelEl) {
-            newLabelEl.focus();
-            document.execCommand('selectAll', false, null);
-            showPopover(newLabelEl, 'newLabel');
-        }
-    }, 0);
     updateDecorationBar();
 };
 
 const handlePopoverAction = (e) => {
     const action = e.target.dataset.action;
-    const month = e.target.dataset.month;
-    if (!action && month === undefined) return;
-
-    // Year/Month Popover Actions
-    if(month !== undefined) {
-         currentDate.setMonth(parseInt(month, 10));
-         hidePopover();
-         render();
-         return;
-    }
-    switch(action) {
-        case 'prev-year':
-            currentDate.setFullYear(currentDate.getFullYear() - 1);
-            showPopover(document.getElementById('year-month-selector'), 'yearMonth');
-            return;
-        case 'next-year':
-             currentDate.setFullYear(currentDate.getFullYear() + 1);
-             showPopover(document.getElementById('year-month-selector'), 'yearMonth');
-             return;
-        case 'go-today':
-             currentDate = new Date();
-             hidePopover();
-             render();
-             return;
-    }
-
+    if (!action) return;
+    
     const activeLabelEl = document.querySelector('.label.editing');
 
     switch(action) {
-        // Label actions
         case 'save':
             if (activeLabelInfo?.type === 'new' && activeLabelEl) {
                 const newLabel = {
@@ -367,7 +293,6 @@ const handlePopoverAction = (e) => {
                     style: activeLabelInfo.style
                 };
                 labels.push(newLabel);
-                hidePopover();
             }
             break;
         case 'update':
@@ -377,146 +302,101 @@ const handlePopoverAction = (e) => {
                     label.text = activeLabelEl.innerText.trim();
                     label.style = activeLabelInfo.style;
                 }
-                hidePopover();
             }
             break;
         case 'delete':
             if (activeLabelInfo?.type === 'existing') {
                 labels = labels.filter(l => l.id !== activeLabelInfo.id);
-                hidePopover();
             }
             break;
-        case 'copy':
+        case 'duplicate':
             if (activeLabelInfo?.type === 'existing') {
                 const labelToCopy = labels.find(l => l.id === activeLabelInfo.id);
                 if (labelToCopy) {
                     clipboard = { text: labelToCopy.text, style: { ...labelToCopy.style } };
                 }
-                hidePopover();
             }
             break;
         case 'paste':
-            if (activeLabelInfo?.type === 'new' && clipboard) {
-                const newLabel = {
-                    id: Date.now(),
-                    date: activeLabelInfo.date,
-                    text: clipboard.text,
-                    top: activeLabelInfo.top,
-                    left: activeLabelInfo.left,
-                    style: { ...clipboard.style }
-                };
-                labels.push(newLabel);
-                hidePopover();
+            if (activeLabelInfo && clipboard) {
+                activeLabelInfo.text = clipboard.text;
+                activeLabelInfo.style = { ...clipboard.style };
+                render(); // Re-render to show pasted content immediately
+                 setTimeout(() => {
+                    const newLabelEl = document.querySelector('.label.editing');
+                    if (newLabelEl) {
+                        newLabelEl.focus();
+                        showPopover(newLabelEl);
+                    }
+                }, 0);
             }
-            break;
-        case 'cancel':
-            hidePopover();
-            break;
-        
-        // Template actions
-        case 'save-as-template': {
-            if (!selectedDateForTemplate) return;
-            
-            const templateNameInput = document.getElementById('new-template-name-input');
-            if (!templateNameInput) return;
-            const templateName = templateNameInput.value.trim();
-
-            if (!templateName) {
-                alert('テンプレート名を入力してください。');
-                templateNameInput.focus();
-                return;
-            }
-
-            const labelsOnDate = labels.filter(l => l.date === selectedDateForTemplate);
-            if (labelsOnDate.length === 0) {
-                alert('テンプレートとして保存するラベルがありません。');
-                return;
-            }
-            
-            if (templates.some(t => t.name === templateName)) {
-                if (!confirm(`テンプレート名 "${templateName}" は既に存在します。上書きしますか？`)) {
-                    return;
+            return; // Do not hide popover yet
+        case 'save-template':
+            if (activeLabelInfo?.type === 'existing') {
+                const labelToSave = labels.find(l => l.id === activeLabelInfo.id);
+                 if (labelToSave) {
+                    const newTemplate = {
+                        id: Date.now(),
+                        text: activeLabelEl.innerText.trim(),
+                        style: { ...activeLabelInfo.style }
+                    };
+                    templates.push(newTemplate);
+                    alert('テンプレートとして保存しました。');
                 }
-                templates = templates.filter(t => t.name !== templateName);
-            }
-
-            const templateLabels = labelsOnDate.map(({ text, top, left, style }) => ({ text, top, left, style: {...style} }));
-            templates.push({ name: templateName, labels: templateLabels });
-            templates.sort((a, b) => a.name.localeCompare(b.name));
-            saveTemplatesToLocalStorage();
-            alert(`テンプレート "${templateName}" を保存しました。`);
-            hidePopover();
-            break;
-        }
-        case 'apply-template':
-            if (!selectedDateForTemplate) return;
-            const templateSelect = document.getElementById('popover-template-select');
-            const selectedTemplateName = templateSelect.value;
-            if (!selectedTemplateName) {
-                alert('適用するテンプレートを選択してください。');
-                return;
-            }
-            const template = templates.find(t => t.name === selectedTemplateName);
-            if (template) {
-                template.labels.forEach(templateLabel => {
-                    labels.push({
-                        id: Date.now() + Math.random(),
-                        date: selectedDateForTemplate,
-                        text: templateLabel.text,
-                        top: templateLabel.top,
-                        left: templateLabel.left,
-                        style: { ...templateLabel.style }
-                    });
-                });
-                render(); // 即時反映
             }
             break;
-         case 'delete-template':
-            if (!selectedDateForTemplate) return;
-            const templateToDelete = document.getElementById('popover-template-select').value;
-            if (!templateToDelete) {
-                 alert('削除するテンプレートを選択してください。');
-                return;
-            }
-            if (confirm(`テンプレート "${templateToDelete}" を削除しますか？`)) {
-                templates = templates.filter(t => t.name !== templateToDelete);
-                saveTemplatesToLocalStorage();
-                // ポップオーバーを再描画してリストを更新
-                const cellEl = document.querySelector(`.date-cell[data-date="${selectedDateForTemplate}"]`);
-                if (cellEl) showPopover(cellEl, 'cell');
-            }
+        case 'recall':
+             isTemplatePopoverVisible = true;
+             render();
+             return; // Do not hide popover yet
+        case 'cancel':
             break;
     }
-
-    if (action !== 'copy' && action !== 'apply-template' && action !== 'delete-template') {
-        saveLabelsToLocalStorage();
-        render();
-        updateDecorationBar();
-    }
+    
+    activeLabelInfo = null;
+    popover.style.display = 'none';
+    
+    saveDataToLocalStorage();
+    render();
+    updateDecorationBar();
 };
 
 const handleDocumentClick = (e) => {
-    // ポップオーバーが表示されている場合、クリックがポップオーバーの領域内かを座標で判定する
-    // これにより、ポップオーバー内のボタンクリックでDOMが変更されても正しく動作する
-    if (popover.style.display !== 'none') {
-        const rect = popover.getBoundingClientRect();
-        if (e.clientX >= rect.left && e.clientX <= rect.right &&
-            e.clientY >= rect.top && e.clientY <= rect.bottom) {
-            return; // ポップオーバー内でのクリックなので何もしない
-        }
-    }
-
-    // 編集中のラベルや装飾バーのクリックも無視する
-    if (e.target.closest('.label.editing') || 
-        e.target.closest('.decoration-bar')) {
+    if (popover.contains(e.target) || 
+        e.target.closest('.label.editing') || 
+        e.target.closest('.decoration-bar') ||
+        e.target.closest('.template-popover-modal')) {
         return;
     }
     
-    // 上記の条件に当てはまらない場合（＝外側をクリックした場合）にポップオーバーを閉じる
-    if (activeLabelInfo || selectedDateForTemplate) {
+    if (activeLabelInfo) {
         hidePopover();
         updateDecorationBar();
     }
+
+    if (isDatePickerVisible && !e.target.closest('.date-picker-container')) {
+        isDatePickerVisible = false;
+        render();
+    }
+};
+
+const handleCalendarWheel = (e) => {
+    e.preventDefault();
+    if (isWheeling) return;
+    isWheeling = true;
+
+    if (e.deltaY < 0) {
+        currentDate.setMonth(currentDate.getMonth() - 1);
+    } else {
+        currentDate.setMonth(currentDate.getMonth() + 1);
+    }
+    
+    if(activeLabelInfo) hidePopover();
+    render();
+
+    setTimeout(() => {
+        isWheeling = false;
+    }, 100);
 };
 
 // --- Drag and Drop Handlers ---
@@ -575,6 +455,8 @@ const handleDragEnd = (e) => {
 
     if (!wasDragging) {
         dragInfo = null;
+        // The click event will handle this case
+        // handleCalendarClick(e);
         return;
     }
     
@@ -582,7 +464,7 @@ const handleDragEnd = (e) => {
     const elementBelow = document.elementFromPoint(e.clientX, e.clientY);
     draggedEl.style.visibility = 'visible';
     
-    const targetCell = elementBelow?.closest('.date-cell:not(.other-month)');
+    const targetCell = elementBelow?.closest('.date-cell');
 
     if (targetCell) {
         const newDate = targetCell.dataset.date;
@@ -602,7 +484,7 @@ const handleDragEnd = (e) => {
     
     draggedEl.remove();
     dragInfo = null;
-    saveLabelsToLocalStorage();
+    saveDataToLocalStorage();
     render(); 
 };
 
@@ -612,13 +494,13 @@ const handleNew = () => {
         return;
     }
     labels = [];
+    templates = [];
     currentId = '';
-    selectedDateForTemplate = null;
-    saveLabelsToLocalStorage();
+    saveDataToLocalStorage();
     render();
 };
 
-const handleSave = () => {
+const handleSaveFile = () => {
     const idInput = document.getElementById('calendar-id');
     currentId = idInput.value.trim();
 
@@ -628,11 +510,11 @@ const handleSave = () => {
         return;
     }
     
-    const now = new Date();
-    const timestamp = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
-    const filename = `${currentId}_${timestamp}.json`;
-
-    const dataStr = JSON.stringify(labels, null, 2);
+    const filename = `${currentId}.json`;
+    
+    // Save both labels and templates
+    const dataToSave = { labels, templates };
+    const dataStr = JSON.stringify(dataToSave, null, 2);
     const dataBlob = new Blob([dataStr], {type: "application/json"});
     const url = URL.createObjectURL(dataBlob);
     const link = document.createElement('a');
@@ -653,18 +535,24 @@ const handleImport = () => {
         const reader = new FileReader();
         reader.onload = event => {
             try {
-                const importedData = JSON.parse(event.target.result);
-                if (Array.isArray(importedData)) {
-                    labels = importedData;
-                    const fileName = file.name;
-                    currentId = fileName.lastIndexOf('.') > 0 ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
-                    
-                    saveLabelsToLocalStorage();
-                    render();
-                    alert('データを正常に読み込みました。');
+                const importedJson = JSON.parse(event.target.result);
+                // Check if the file contains the new structure {labels, templates} or just an array (old format)
+                if (Array.isArray(importedJson)) {
+                     labels = importedJson;
+                     templates = []; // Reset templates for old format files
+                } else if (importedJson && Array.isArray(importedJson.labels)) {
+                    labels = importedJson.labels;
+                    templates = importedJson.templates || [];
                 } else {
-                    alert('エラー: JSONファイルが正しい配列形式ではありません。');
+                    throw new Error('JSONの形式が正しくありません。');
                 }
+
+                const fileName = file.name;
+                currentId = fileName.lastIndexOf('.') > 0 ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
+                
+                saveDataToLocalStorage();
+                render();
+                alert('データを正常に読み込みました。');
             } catch (error) {
                 alert(`エラー: ファイルの読み込みに失敗しました。\n${error.message}`);
             } finally {
@@ -677,6 +565,132 @@ const handleImport = () => {
 };
 
 // --- レンダリング関数 ---
+const renderDatePickerPopover = () => {
+    const monthNames = [...Array(12).keys()].map(i => `${i + 1}月`);
+    const currentSelectedMonth = currentDate.getFullYear() === datePickerYear ? currentDate.getMonth() : -1;
+
+    const monthButtonsHtml = monthNames.map((month, index) => `
+        <button 
+            class="month-btn ${index === currentSelectedMonth ? 'active' : ''}" 
+            data-month="${index}">
+            ${month}
+        </button>
+    `).join('');
+
+    return `
+    <div id="date-picker-popover">
+        <div class="date-picker-header">
+            <button id="prev-year-btn" aria-label="前の年">＜</button>
+            <input type="number" id="year-input" value="${datePickerYear}" aria-label="年を入力">
+            <button id="next-year-btn" aria-label="次の年">＞</button>
+        </div>
+        <div class="month-grid" role="group">
+            ${monthButtonsHtml}
+        </div>
+        <div class="date-picker-footer">
+            <button id="date-picker-today-btn">今日</button>
+        </div>
+    </div>
+    `;
+}
+
+const handleTemplatePopoverAction = (e) => {
+    e.stopPropagation(); // Stop event from bubbling to backdrop
+    const target = e.target;
+    const action = target.dataset.action;
+    const templateItem = target.closest('.template-list-item');
+
+    if (templateItem) {
+        selectedTemplateId = Number(templateItem.dataset.id);
+        renderTemplatePopover(); // Re-render to show selection
+        return;
+    }
+
+    if (!action) return;
+
+    switch (action) {
+        case 'select':
+            if (activeLabelInfo && selectedTemplateId) {
+                const template = templates.find(t => t.id === selectedTemplateId);
+                if (template) {
+                    activeLabelInfo.text = template.text;
+                    activeLabelInfo.style = { ...template.style };
+                }
+            }
+            isTemplatePopoverVisible = false;
+            selectedTemplateId = null;
+            render();
+            // After re-rendering the main view, re-focus and show the main popover
+            setTimeout(() => {
+                const activeLabelEl = document.querySelector('.label.editing');
+                if (activeLabelEl) {
+                    activeLabelEl.focus();
+                    showPopover(activeLabelEl);
+                }
+            }, 0);
+            break;
+        case 'delete':
+             if (selectedTemplateId) {
+                templates = templates.filter(t => t.id !== selectedTemplateId);
+                selectedTemplateId = null;
+                saveDataToLocalStorage();
+                renderTemplatePopover();
+             }
+            break;
+        case 'close':
+            isTemplatePopoverVisible = false;
+            selectedTemplateId = null;
+            render();
+            break;
+    }
+};
+
+const renderTemplatePopover = () => {
+    if (!isTemplatePopoverVisible) {
+        templatePopoverContainer.innerHTML = '';
+        return;
+    }
+
+    let listContent = '';
+    if (templates.length > 0) {
+        listContent = templates.map(template => `
+            <li class="template-list-item ${template.id === selectedTemplateId ? 'selected' : ''}" 
+                data-id="${template.id}" 
+                style="${getLabelStyle(template.style)}">
+                ${template.text}
+            </li>
+        `).join('');
+    } else {
+        listContent = '<div class="template-list-placeholder">保存されたテンプレートはありません。</div>';
+    }
+
+    const popoverHtml = `
+        <div class="template-popover-backdrop">
+            <div class="template-popover-modal">
+                <ul class="template-list">
+                   ${listContent}
+                </ul>
+                <div class="template-popover-actions">
+                     <button class="popover-btn" data-action="select" ${!selectedTemplateId ? 'disabled' : ''}>選択</button>
+                     <button class="popover-btn" data-action="delete" ${!selectedTemplateId ? 'disabled' : ''}>削除</button>
+                     <button class="popover-btn" data-action="close">閉じる</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    templatePopoverContainer.innerHTML = popoverHtml;
+    templatePopoverContainer.querySelector('.template-popover-backdrop').addEventListener('click', (e) => {
+        // Only close if backdrop itself is clicked
+        if (e.target === e.currentTarget) {
+            isTemplatePopoverVisible = false;
+            selectedTemplateId = null;
+            render();
+        }
+    });
+    templatePopoverContainer.querySelector('.template-popover-modal').addEventListener('click', handleTemplatePopoverAction);
+};
+
 const render = () => {
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -713,13 +727,11 @@ const render = () => {
     const dayOfWeek = date.getDay();
     const isSunday = dayOfWeek === 0;
     const isSaturday = dayOfWeek === 6;
-    const dateStr = formatDate(date);
-    
-    const isSelectedForTemplate = selectedDateForTemplate === dateStr;
 
-    const cellClasses = ['date-cell', isOtherMonth ? 'other-month' : '', isSelectedForTemplate ? 'selected-for-template' : ''].filter(Boolean).join(' ');
+    const cellClasses = ['date-cell', isOtherMonth ? 'other-month' : ''].filter(Boolean).join(' ');
     const numberClasses = ['date-number', isToday ? 'today' : '', !isToday && isSunday ? 'sunday' : '', !isToday && isSaturday ? 'saturday' : ''].filter(Boolean).join(' ');
 
+    const dateStr = formatDate(date);
     const labelsForDate = labels.filter(label => label.date === dateStr);
     let labelsHtml = labelsForDate.map(label => {
         const isEditing = activeLabelInfo?.type === 'existing' && activeLabelInfo.id === label.id;
@@ -752,16 +764,17 @@ const render = () => {
       </div>
     `;
   }).join('');
-  
+
   const appHtml = `
     <div class="app-container">
       <header class="header">
         <div class="header-top">
-          <h1 class="header-title">
-            <span id="year-month-selector" class="year-month-selector" title="年月を変更">
+          <div class="date-picker-container">
+            <button id="date-picker-trigger" class="header-title-btn" aria-haspopup="true" aria-expanded="${isDatePickerVisible}">
               ${year}年 ${month + 1}月
-            </span>
-          </h1>
+            </button>
+            ${isDatePickerVisible ? renderDatePickerPopover() : ''}
+          </div>
           <div class="header-controls">
             <div class="id-control">
               <label for="calendar-id">ID:</label>
@@ -794,7 +807,7 @@ const render = () => {
           </div>
         </div>
       </header>
-      <main class="calendar-board" aria-label="カレンダー">
+      <main class="calendar-board" id="calendar-board" aria-label="カレンダー">
         <div class="calendar-grid" id="calendar-grid">
           ${dayHeadersHtml}
           ${dateCellsHtml}
@@ -806,29 +819,29 @@ const render = () => {
   root.innerHTML = appHtml;
 
   // --- イベントリスナーの登録 ---
-  document.getElementById('year-month-selector').addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (popover.style.display !== 'none' && popover.querySelector('.year-month-popover-content')) {
-        hidePopover();
-    } else {
-        showPopover(e.currentTarget, 'yearMonth');
-    }
-  });
-
-  document.getElementById('new-btn').addEventListener('click', handleNew);
-  document.getElementById('save-btn').addEventListener('click', handleSave);
-  document.getElementById('import-btn').addEventListener('click', handleImport);
+  document.getElementById('date-picker-trigger').addEventListener('click', toggleDatePicker);
+  if (isDatePickerVisible) {
+    document.getElementById('date-picker-popover').addEventListener('click', handleDatePickerClick);
+    document.getElementById('year-input').addEventListener('input', handleYearInputChange);
+  }
   
+  document.getElementById('new-btn').addEventListener('click', handleNew);
+  document.getElementById('save-btn').addEventListener('click', handleSaveFile);
+  document.getElementById('import-btn').addEventListener('click', handleImport);
+
   const idInput = document.getElementById('calendar-id');
   idInput.value = currentId;
   idInput.addEventListener('input', e => {
     currentId = e.target.value;
+    // The currentId is now just for saving, so we don't need to re-render or switch data
   });
 
   const calendarGrid = document.getElementById('calendar-grid');
   calendarGrid.addEventListener('click', handleCalendarClick);
-  calendarGrid.addEventListener('dblclick', handleCalendarDblClick);
   calendarGrid.addEventListener('mousedown', handleDragStart);
+  
+  const calendarBoard = document.getElementById('calendar-board');
+  calendarBoard.addEventListener('wheel', handleCalendarWheel);
 
   popover.addEventListener('click', handlePopoverAction);
   
@@ -842,12 +855,14 @@ const render = () => {
   });
   
   updateDecorationBar();
+
+  // Render template popover if needed
+  renderTemplatePopover();
 };
 
 // --- 初期化 ---
 const initialize = () => {
-    loadLabelsFromLocalStorage();
-    loadTemplatesFromLocalStorage();
+    loadDataFromLocalStorage();
     render();
 };
 

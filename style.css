@@ -1,3 +1,4 @@
+
 /* 全体のスタイル */
 :root {
   --primary-color: #007bff;
@@ -12,6 +13,18 @@
   --popover-bg: #fff;
   --popover-shadow: rgba(0, 0, 0, 0.15);
   --danger-color: #dc3545;
+
+  /* New button colors */
+  --btn-blue-bg: #eaf4ff;
+  --btn-blue-hover-bg: #d0e6ff;
+  --btn-yellow-bg: #fff9e0;
+  --btn-yellow-hover-bg: #fff2c2;
+  --btn-brown-bg: #f4f0eb;
+  --btn-brown-hover-bg: #e8e2d9;
+  --btn-green-bg: #e6f8e6;
+  --btn-green-hover-bg: #d1f0d1;
+  --btn-red-bg: #ffebeb;
+  --btn-red-hover-bg: #ffd6d6;
 }
 
 body {
@@ -52,23 +65,6 @@ body {
   margin-bottom: 16px;
   gap: 20px;
 }
-.header-title {
-  font-size: 1.5em;
-  font-weight: 600;
-  color: #2c3e50;
-  margin: 0;
-  white-space: nowrap;
-}
- .year-month-selector {
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 6px;
-    transition: background-color 0.2s;
-}
-.year-month-selector:hover {
-    background-color: #f0f0f0;
-}
-
 .header-controls {
     display: flex;
     align-items: center;
@@ -79,7 +75,6 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-left: 24px;
 }
 .id-control label {
     font-size: 1em;
@@ -108,7 +103,6 @@ body {
   font-size: 0.9em;
   transition: all 0.2s ease-in-out;
   white-space: nowrap;
-  font-weight: 500;
 }
 .data-ops button:hover {
   background-color: #f0f0f0;
@@ -121,20 +115,114 @@ body {
   transform: translateY(0);
 }
 
-/* --- Data Ops Button Colors --- */
-#new-btn {
-    background-color: #fffbe6; color: #856404; border-color: #ffeeba;
+/* Date Picker Popover */
+.date-picker-container {
+  position: relative;
 }
-#new-btn:hover { background-color: #fff8d6; }
-#save-btn {
-    background-color: #e6f7f0; color: #1e875a; border-color: #a3d9c0;
+.header-title-btn {
+  background-color: transparent;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out;
+  font-size: 1.5em;
+  font-weight: 600;
+  color: #2c3e50;
+  font-family: inherit;
+  white-space: nowrap;
 }
-#save-btn:hover { background-color: #d1f0e3; }
-#import-btn {
-    background-color: #e7f3ff; color: #005bb5; border-color: #b3d7ff;
+.header-title-btn:hover {
+  background-color: #f0f0f0;
 }
-#import-btn:hover { background-color: #d0e7ff; }
-
+#date-picker-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 280px;
+  background-color: var(--popover-bg);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  padding: 16px;
+  z-index: 200;
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.date-picker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.date-picker-header button {
+  background: none;
+  border: none;
+  font-size: 1.2em;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 4px 12px;
+  border-radius: 4px;
+}
+.date-picker-header button:hover {
+  background-color: #f0f0f0;
+}
+#year-input {
+  width: 80px;
+  text-align: center;
+  font-size: 1.1em;
+  font-weight: 500;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 4px;
+  -moz-appearance: textfield; /* Firefox */
+}
+#year-input::-webkit-outer-spin-button,
+#year-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.month-btn {
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background-color: #f8f8f8;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.9em;
+}
+.month-btn:hover {
+  background-color: #eef7ff;
+  border-color: var(--primary-color);
+}
+.month-btn.active {
+  background-color: var(--primary-color);
+  color: white;
+  font-weight: bold;
+}
+.date-picker-footer {
+  text-align: center;
+  margin-top: 8px;
+}
+#date-picker-today-btn {
+  width: 100%;
+  padding: 10px;
+  font-size: 1em;
+  font-weight: 500;
+  background-color: #f0f0f0;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+#date-picker-today-btn:hover {
+  background-color: #e0e0e0;
+}
 
 /* 装飾バー */
 .decoration-bar {
@@ -198,6 +286,7 @@ body {
   border-color: var(--primary-color);
 }
 
+
 /* カレンダーボード */
 .calendar-board {
   padding: 16px;
@@ -227,28 +316,24 @@ body {
   min-height: 120px;
   background-color: var(--bg-white);
   padding: 8px;
-  transition: background-color 0.2s, box-shadow 0.2s;
+  transition: background-color 0.2s;
   display: flex;
   flex-direction: column;
+  cursor: pointer;
 }
 .date-cell.other-month {
   background-color: #fdfdfd;
-  cursor: pointer;
-}
-.date-cell:not(.other-month) {
-    cursor: pointer;
 }
 .date-cell.other-month .date-number {
   color: var(--text-secondary);
   opacity: 0.7;
 }
-.date-cell:not(.other-month):hover, .date-cell.other-month:hover {
+ .date-cell:hover {
     background-color: #eef7ff;
-}
-.date-cell.selected-for-template {
-    box-shadow: inset 0 0 0 3px var(--primary-color);
-    background-color: #eef7ff;
-}
+ }
+ .date-cell.other-month:hover {
+    background-color: #f5fafd;
+ }
 
 .date-number {
   font-size: 0.9em;
@@ -303,7 +388,7 @@ body {
   cursor: grabbing;
   box-shadow: 0 8px 16px rgba(0,0,0,0.2);
   z-index: 999;
-  width: auto; 
+  width: auto;
 }
 
 /* ポップオーバー */
@@ -312,147 +397,155 @@ body {
   background-color: var(--popover-bg);
   border-radius: 8px;
   box-shadow: 0 4px 12px var(--popover-shadow);
-  padding: 12px;
+  padding: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   z-index: 100;
   border: 1px solid var(--border-color);
   transition: opacity 0.1s ease-in-out, transform 0.1s ease-in-out;
-  min-width: 280px;
-}
-.popover-content {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-.popover-actions {
-    display: flex;
-    gap: 6px;
-}
-.popover-template-section {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
- .popover-template-section select, .popover-template-section input {
-    width: 100%;
-    padding: 8px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    font-size: 13px;
-    box-sizing: border-box; /* paddingを含めてwidth 100%にする */
-    flex-grow: 1;
-}
-.popover-section-label {
-    font-size: 12px;
-    font-weight: 500;
-    text-align: left;
-    width: 100%;
-    color: #555;
-}
-#popover hr {
-    border: none;
-    border-top: 1px solid var(--border-color);
-    margin: 0;
+  max-width: 250px;
 }
 .popover-btn {
-    background: none;
-    border: 1px solid #ccc;
+    border: 1px solid #dcdcdc;
     border-radius: 4px;
-    padding: 8px 12px;
+    padding: 6px 10px;
     font-size: 13px;
     cursor: pointer;
-    transition: background-color 0.2s, border-color 0.2s, color 0.2s;
-    white-space: nowrap;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+.popover-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* --- Popover Button Colors --- */
+/* 決定 (save/update) / 選択 (select) - Light Blue */
+.popover-btn[data-action="save"],
+.popover-btn[data-action="update"],
+.popover-btn[data-action="select"] {
+    background-color: var(--btn-blue-bg);
+    border-color: #b8d6f5;
+}
+.popover-btn[data-action="save"]:hover:not(:disabled),
+.popover-btn[data-action="update"]:hover:not(:disabled),
+.popover-btn[data-action="select"]:hover:not(:disabled) {
+    background-color: var(--btn-blue-hover-bg);
+}
+
+/* 貼付 (paste) / 複写 (duplicate) - Light Yellow */
+.popover-btn[data-action="paste"],
+.popover-btn[data-action="duplicate"] {
+    background-color: var(--btn-yellow-bg);
+    border-color: #f0e0a4;
+}
+.popover-btn[data-action="paste"]:hover:not(:disabled),
+.popover-btn[data-action="duplicate"]:hover:not(:disabled) {
+    background-color: var(--btn-yellow-hover-bg);
+}
+
+/* 呼出 (recall) - Light Brown */
+.popover-btn[data-action="recall"] {
+    background-color: var(--btn-brown-bg);
+    border-color: #dcd4c9;
+}
+.popover-btn[data-action="recall"]:hover:not(:disabled) {
+    background-color: var(--btn-brown-hover-bg);
+}
+
+/* 取消 (cancel) / 閉じる (close) - Light Red */
+.popover-btn[data-action="cancel"],
+.popover-btn[data-action="close"] {
+    background-color: var(--btn-red-bg);
+    border-color: #f5c4c4;
+}
+.popover-btn[data-action="cancel"]:hover:not(:disabled),
+.popover-btn[data-action="close"]:hover:not(:disabled) {
+    background-color: var(--btn-red-hover-bg);
+}
+
+/* テンプレ保存 (save-template) - Light Green */
+.popover-btn[data-action="save-template"] {
+    background-color: var(--btn-green-bg);
+    border-color: #b8e2b8;
+}
+.popover-btn[data-action="save-template"]:hover:not(:disabled) {
+    background-color: var(--btn-green-hover-bg);
+}
+
+/* 削除 (delete) - White bg, black border, red text */
+.popover-btn[data-action="delete"] {
+    background-color: #ffffff;
+    color: var(--danger-color);
+    border: 1px solid #333;
     font-weight: 500;
 }
-.popover-btn:hover {
-    background-color: #f0f0f0;
+.popover-btn[data-action="delete"]:hover:not(:disabled) {
+    background-color: var(--danger-color);
+    color: white;
+    border-color: var(--danger-color);
 }
 
-/* --- Popover Button Color Scheme --- */
-
-/* Constructive actions (Apply, Update, Paste) - Light Blue */
-.popover-btn[data-action="apply-template"],
-.popover-btn[data-action="update"],
-.popover-btn[data-action="paste"] {
-    background-color: #e7f3ff;
-    color: #005bb5;
-    border: 1px solid #b3d7ff;
-}
-.popover-btn[data-action="apply-template"]:hover,
-.popover-btn[data-action="update"]:hover,
-.popover-btn[data-action="paste"]:hover {
-    background-color: #d0e7ff;
-    border-color: #8ac2ff;
-}
-
-/* Creation actions (Save Template, Save Label, Copy) - Light Green */
-.popover-btn[data-action="save-as-template"],
-.popover-btn[data-action="save"],
-.popover-btn[data-action="copy"] {
-    background-color: #e6f7f0;
-    color: #1e875a;
-    border: 1px solid #a3d9c0;
-}
-.popover-btn[data-action="save-as-template"]:hover,
-.popover-btn[data-action="save"]:hover,
-.popover-btn[data-action="copy"]:hover {
-    background-color: #d1f0e3;
-    border-color: #82c9ab;
-}
-
-/* Destructive/Neutral actions (Delete, Cancel) - Light Red */
-.popover-btn[data-action="delete-template"],
-.popover-btn[data-action="delete"],
-.popover-btn[data-action="cancel"] {
-    background-color: #fbebeb;
-    color: var(--danger-color);
-    border: 1px solid #f5c6cb;
-}
-.popover-btn[data-action="delete-template"]:hover,
-.popover-btn[data-action="delete"]:hover,
-.popover-btn[data-action="cancel"]:hover {
-    background-color: #f8d7da;
-    border-color: #f1b0b7;
-}
-
-/* --- Year Month Popover --- */
-.year-month-popover-content {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-.year-selector-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-}
-.year-selector-header button {
-    background: none; border: none; font-size: 20px; cursor: pointer; padding: 0 10px;
-}
-.year-selector-header input {
-    font-size: 1.1em; font-weight: bold; text-align: center; border: 1px solid #ccc; border-radius: 4px; width: 80px; padding: 4px;
-}
-.month-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
-}
-.month-grid-item {
-    background-color: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 10px 0; text-align: center; cursor: pointer;
-    transition: background-color 0.2s;
-}
-.month-grid-item:hover { background-color: #eef7ff; }
-.month-grid-item.current { background-color: var(--primary-color); color: white; font-weight: bold; }
-.popover-footer {
+/* テンプレートポップオーバー */
+.template-popover-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.4);
+    z-index: 1000;
     display: flex;
     justify-content: center;
-    border-top: 1px solid var(--border-color);
-    padding-top: 12px;
+    align-items: center;
 }
-.popover-footer button {
-    width: 100%;
-    background-color: #e7f3ff; color: #005bb5; border: 1px solid #b3d7ff;
-    padding: 8px; border-radius: 4px; font-weight: 500; cursor: pointer;
+.template-popover-modal {
+    background-color: var(--popover-bg);
+    border-radius: 8px;
+    padding: 8px;
+    width: 90%;
+    max-width: 250px;
+    box-shadow: 0 4px 12px var(--popover-shadow);
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 80vh;
 }
- .popover-footer button:hover { background-color: #d0e7ff; }
+.template-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    max-height: 250px;
+}
+.template-list-item {
+    padding: 10px;
+    border-bottom: 1px solid #f0f0f0;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    word-wrap: break-word;
+}
+.template-list-item:last-child {
+    border-bottom: none;
+}
+.template-list-item:hover {
+    background-color: #f5f5f5;
+}
+.template-list-item.selected {
+    background-color: #eef7ff;
+    border-left: 3px solid var(--primary-color);
+    font-weight: 500;
+}
+.template-list-placeholder {
+    padding: 20px;
+    text-align: center;
+    color: #888;
+}
+.template-popover-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
